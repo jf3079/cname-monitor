@@ -1,0 +1,17 @@
+[
+  {
+    "name": "myhq.portal.brpower.coop",
+    "domain": "_b3d544d30abfd3474222e28d4fe180fb.myhq.portal.brpower.coop.",
+    "expected": null
+  },
+{
+    "name": "myhqprep.portal.brpower.coop",
+    "domain": "_e694e40b62e6e0896c87471a6aa7c75b.myhqprep.portal.brpower.coop.",
+    "expected": null
+  },
+  {
+    "name": "workordermap.comed.com",
+    "domain": "_3de355d6e0d0bcc964e79ff6f041a915.workordermap.comed.com.",
+    "expected": null
+  }
+]

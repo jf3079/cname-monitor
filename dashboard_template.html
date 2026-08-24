@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CNAME Monitor</title>
+<style>
+  :root{
+    --bg:#0f1720; --card:#182432; --card2:#1f2e40; --accent:#4ade80; --accent2:#38bdf8;
+    --text:#e6edf3; --muted:#8b98a5; --border:#2b3a4a; --danger:#f87171; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:linear-gradient(180deg,#0f1720,#0b1017); color:var(--text); min-height:100vh; padding:24px;}
+  .wrap{max-width:1000px; margin:0 auto;}
+  h1{font-size:22px; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:18px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:18px;}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;}
+  .field{display:flex; flex-direction:column; gap:6px; flex:1; min-width:160px;}
+  label{font-size:12px; color:var(--muted);}
+  input,select{background:var(--card2); border:1px solid var(--border); color:var(--text);
+    padding:9px 10px; border-radius:8px; font-size:14px; outline:none;}
+  input:focus{border-color:var(--accent2);}
+  button{background:var(--accent); color:#08130b; border:none; padding:9px 15px;
+    border-radius:8px; font-weight:600; cursor:pointer; font-size:13.5px;}
+  button.secondary{background:transparent; border:1px solid var(--border); color:var(--text);}
+  button.danger{background:transparent; border:1px solid var(--border); color:var(--danger);}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+  table{width:100%; border-collapse:collapse; margin-top:8px; font-size:13px;}
+  th,td{padding:9px 10px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top;}
+  th{color:var(--muted); font-weight:500; font-size:12px;}
+  tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block; font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px;}
+  .badge.ok{background:rgba(74,222,128,.15); color:var(--accent);}
+  .badge.changed{background:rgba(248,113,113,.15); color:var(--danger);}
+  .badge.unresolved{background:rgba(251,191,36,.15); color:var(--warn);}
+  .badge.new{background:rgba(56,189,248,.15); color:var(--accent2);}
+  .badge.unchecked{background:rgba(139,152,165,.15); color:var(--muted);}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;}
+  .muted{color:var(--muted); font-size:12px;}
+  .statusline{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;}
+  .connbadge{font-size:11px; padding:4px 10px; border-radius:999px; background:var(--card2); color:var(--muted);}
+  .connbadge.on{color:var(--accent); background:rgba(74,222,128,.12);}
+  .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+  .hist{font-size:11.5px; color:var(--muted); margin-top:4px; max-width:260px;}
+  .note{font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px;}
+  .removeBtn{font-size:11px; padding:5px 9px;}
+  .empty{color:var(--muted); font-size:13px; padding:14px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CNAME Monitor</h1>
+  <div class="sub">Tracks CNAME records for your domains and flags changes. Background checks run on a schedule; this page shows the latest results and lets you manage the domain list.</div>
+
+  <div class="card">
+    <div class="statusline">
+      <div>
+        <span id="connBadge" class="connbadge">Config not connected</span>
+        <span class="muted" id="lastRunLabel" style="margin-left:10px;"></span>
+      </div>
+      <div class="actions" style="margin:0;">
+        <button class="secondary" onclick="connectFolder()">Connect config folder</button>
+        <button class="secondary" onclick="checkAllLive()" id="checkAllBtn">Check all now (live)</button>
+      </div>
+    </div>
+    <div class="note">"Connect config folder" lets this page read and save <span class="mono">domains.json</span> / <span class="mono">history.json</span> directly (select the <span class="mono">cname-monitor</span> folder). Works in Chrome/Edge. Without it, this page just shows a snapshot from the last scheduled run — added domains won't be saved to disk.</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:10px;">Check frequency</div>
+    <div class="row">
+      <div class="field" style="max-width:260px;">
+        <label>How often to check</label>
+        <select id="intervalSelect">
+          <option value="*/5 * * * *">Every 5 minutes</option>
+          <option value="*/15 * * * *">Every 15 minutes</option>
+          <option value="*/30 * * * *">Every 30 minutes</option>
+          <option value="0 * * * *">Every hour</option>
+          <option value="0 */3 * * *">Every 3 hours</option>
+          <option value="0 */6 * * *">Every 6 hours</option>
+          <option value="0 */12 * * *">Every 12 hours</option>
+          <option value="0 0 * * *">Once a day (midnight)</option>
+        </select>
+      </div>
+      <div>
+        <button onclick="saveInterval()">Save interval</button>
+      </div>
+    </div>
+    <div class="note" id="intervalNote">Saved to <span class="mono">settings.json</span>. The scheduled check reads this file each run and updates its own schedule to match, so a change here takes effect starting with the next run (up to one run at the old frequency after saving).</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:10px;">Email alerts</div>
+    <div class="row">
+      <div class="field" style="max-width:220px; flex:none;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="emailEnabled" style="width:auto;">
+          Email me when a CNAME changes
+        </label>
+      </div>
+      <div class="field">
+        <label>Alert email address</label>
+        <input type="email" id="emailAddress" placeholder="e.g. you@example.com">
+      </div>
+      <div>
+        <button onclick="saveEmailAlerts()">Save</button>
+      </div>
+    </div>
+    <div class="note" id="emailNote">Requires a Gmail connector connected to Claude. Saved to <span class="mono">settings.json</span>; the scheduled check reads it each run and, if enabled, emails this address (in addition to the chat notification) whenever a monitored CNAME changes or stops resolving. You can leave this address blank for now and fill it in later.</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:10px;">Add a domain</div>
+    <div class="row">
+      <div class="field">
+        <label>Domain (optional)</label>
+        <input type="text" id="newName" placeholder="e.g. Marketing site">
+      </div>
+      <div class="field">
+        <label>CNAME name</label>
+        <input type="text" id="newDomain" placeholder="e.g. app.example.com">
+      </div>
+      <div>
+        <button onclick="addDomain()">Add</button>
+      </div>
+    </div>
+    <div class="note">You'll be alerted whenever the CNAME value changes from what was first observed for a domain.</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; margin-bottom:6px;">Monitored domains</div>
+    <table>
+      <thead>
+        <tr><th>Domain</th><th>CNAME name</th><th>CNAME value</th><th>Status</th><th>Last checked</th><th>History</th><th></th></tr>
+      </thead>
+      <tbody id="domainBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg" style="display:none;">No domains yet — add one above.</div>
+  </div>
+</div>
+
+<script>
+/*__EMBEDDED_DATA__*/
+
+let domains = EMBEDDED.domains || [];
+let history = EMBEDDED.history || {};
+let settings = EMBEDDED.settings || {};
+let dirHandle = null;
+let liveResults = {}; // domain -> {target, status, checkedAt} from client-side "check now"
+
+function fmtTime(iso){
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+function latestHistory(domain){
+  const h = history[domain];
+  if (!h || !h.length) return null;
+  return h[h.length - 1];
+}
+
+function statusBadge(status){
+  const s = status || 'unchecked';
+  const label = {ok:'OK', changed:'Changed', unresolved:'Unresolved', new:'New', unchecked:'Unchecked'}[s] || s;
+  return `<span class="badge ${s}">${label}</span>`;
+}
+
+let editingIndex = null;
+
+function escapeAttr(s){
+  return (s || '').replace(/"/g, '&quot;');
+}
+
+function render(){
+  const body = document.getElementById('domainBody');
+  body.innerHTML = '';
+  document.getElementById('emptyMsg').style.display = domains.length ? 'none' : 'block';
+
+  domains.forEach((d, i) => {
+    const last = latestHistory(d.domain);
+    const live = liveResults[d.domain];
+    const target = live ? live.target : (last ? last.target : null);
+    const status = live ? live.status : (last ? last.status : 'unchecked');
+    const checkedAt = live ? live.checkedAt : (last ? last.timestamp : null);
+
+    const h = history[d.domain] || [];
+    const histStr = h.slice(-4).reverse().map(e => `${fmtTime(e.timestamp)}: ${e.target || '(none)'}`).join('<br>');
+
+    const tr = document.createElement('tr');
+
+    if (i === editingIndex){
+      tr.innerHTML = `
+        <td><input type="text" id="editName" value="${escapeAttr(d.name)}" placeholder="Domain (friendly label)"></td>
+        <td><input type="text" id="editDomain" value="${escapeAttr(d.domain)}" placeholder="CNAME name"></td>
+        <td class="mono">${target || '<span class="muted">–</span>'}</td>
+        <td>${statusBadge(status)}</td>
+        <td class="muted">${fmtTime(checkedAt)}</td>
+        <td class="hist">${histStr || '<span class="muted">no history yet</span>'}</td>
+        <td>
+          <button onclick="saveEdit(${i})">Save</button>
+          <button class="secondary removeBtn" onclick="cancelEdit()">Cancel</button>
+        </td>
+      `;
+    } else {
+      tr.innerHTML = `
+        <td>${d.name || '<span class="muted">–</span>'}</td>
+        <td class="mono">${d.domain}</td>
+        <td class="mono">${target || '<span class="muted">–</span>'}</td>
+        <td>${statusBadge(status)}${live ? ' <span class="muted" style="font-size:10px;">(live)</span>' : ''}</td>
+        <td class="muted">${fmtTime(checkedAt)}</td>
+        <td class="hist">${histStr || '<span class="muted">no history yet</span>'}</td>
+        <td>
+          <button class="secondary removeBtn" onclick="editDomain(${i})">Edit</button>
+          <button class="danger removeBtn" onclick="removeDomain(${i})">Remove</button>
+        </td>
+      `;
+    }
+    body.appendChild(tr);
+  });
+}
+
+function editDomain(i){
+  editingIndex = i;
+  render();
+}
+
+function cancelEdit(){
+  editingIndex = null;
+  render();
+}
+
+function saveEdit(i){
+  const name = document.getElementById('editName').value.trim();
+  const domain = document.getElementById('editDomain').value.trim().toLowerCase();
+
+  if (!domain){ alert('Domain cannot be empty.'); return; }
+  if (domains.some((d, idx) => idx !== i && d.domain === domain)){
+    alert('Another entry already tracks that domain.');
+    return;
+  }
+
+  const oldDomain = domains[i].domain;
+  domains[i] = {name: name || null, domain};
+
+  // if the domain string itself changed, carry its history over to the new key
+  if (oldDomain !== domain && history[oldDomain]){
+    history[domain] = history[oldDomain];
+    delete history[oldDomain];
+  }
+
+  editingIndex = null;
+  render();
+  if (dirHandle){
+    saveDomains();
+    saveHistory();
+  } else {
+    alert('Updated for this view. Connect the config folder to save it so the scheduled check picks it up.');
+  }
+}
+
+async function connectFolder(){
+  try{
+    dirHandle = await window.showDirectoryPicker();
+    const domainsHandle = await dirHandle.getFileHandle('domains.json', {create:true});
+    const historyHandle = await dirHandle.getFileHandle('history.json', {create:true});
+    const settingsHandle = await dirHandle.getFileHandle('settings.json', {create:true});
+    const domainsFile = await domainsHandle.getFile();
+    const historyFile = await historyHandle.getFile();
+    const settingsFile = await settingsHandle.getFile();
+    const domainsText = (await domainsFile.text()).trim();
+    const historyText = (await historyFile.text()).trim();
+    const settingsText = (await settingsFile.text()).trim();
+    domains = domainsText ? JSON.parse(domainsText) : [];
+    history = historyText ? JSON.parse(historyText) : {};
+    settings = settingsText ? JSON.parse(settingsText) : {};
+    document.getElementById('connBadge').textContent = 'Config connected';
+    document.getElementById('connBadge').classList.add('on');
+    applyIntervalToSelect();
+    applyEmailAlertsToForm();
+    render();
+  }catch(err){
+    if (err.name !== 'AbortError'){
+      alert('Could not connect folder: ' + err.message + '\n\nThis feature needs Chrome or Edge. In other browsers, edit domains.json directly or ask Claude to add domains for you.');
+    }
+  }
+}
+
+async function saveDomains(){
+  if (!dirHandle) return;
+  const fh = await dirHandle.getFileHandle('domains.json', {create:true});
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify(domains, null, 2));
+  await w.close();
+}
+
+async function saveHistory(){
+  if (!dirHandle) return;
+  const fh = await dirHandle.getFileHandle('history.json', {create:true});
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify(history, null, 2));
+  await w.close();
+}
+
+async function saveSettings(){
+  if (!dirHandle) return;
+  const fh = await dirHandle.getFileHandle('settings.json', {create:true});
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify(settings, null, 2));
+  await w.close();
+}
+
+function applyIntervalToSelect(){
+  const sel = document.getElementById('intervalSelect');
+  const cron = settings.cron || '0 * * * *';
+  const opt = Array.from(sel.options).find(o => o.value === cron);
+  if (opt) sel.value = cron;
+  // if it's a custom cron not in the preset list, leave the dropdown on its
+  // default and mention the raw value in the note instead of guessing.
+  const noteEl = document.getElementById('intervalNote');
+  if (!opt){
+    noteEl.textContent = `Currently set to a custom schedule not in this list ("${cron}"). Saving here will replace it with the preset you pick.`;
+  }
+}
+
+function saveInterval(){
+  const cron = document.getElementById('intervalSelect').value;
+  settings.cron = cron;
+  if (dirHandle){
+    saveSettings();
+    document.getElementById('intervalNote').textContent =
+      'Saved. The scheduled check will pick up this new frequency on its next run.';
+  } else {
+    alert('Connect the config folder first so this can be saved to settings.json — otherwise the scheduled check has no way to see the change.');
+  }
+}
+
+function applyEmailAlertsToForm(){
+  const ea = settings.emailAlerts || {};
+  document.getElementById('emailEnabled').checked = !!ea.enabled;
+  document.getElementById('emailAddress').value = ea.to || '';
+}
+
+function saveEmailAlerts(){
+  const enabled = document.getElementById('emailEnabled').checked;
+  const to = document.getElementById('emailAddress').value.trim();
+  if (enabled && !to){
+    alert('Enter an email address, or leave "Email me when a CNAME changes" unchecked until you have one to add.');
+    return;
+  }
+  settings.emailAlerts = {enabled, to: to || null};
+  if (dirHandle){
+    saveSettings();
+    document.getElementById('emailNote').textContent =
+      'Saved. The scheduled check will use this starting with its next run.';
+  } else {
+    alert('Connect the config folder first so this can be saved to settings.json — otherwise the scheduled check has no way to see the change.');
+  }
+}
+
+function addDomain(){
+  const name = document.getElementById('newName').value.trim();
+  const domain = document.getElementById('newDomain').value.trim().toLowerCase();
+  if (!domain){ alert('Enter a domain.'); return; }
+  if (domains.some(d => d.domain === domain)){ alert('Already tracking that domain.'); return; }
+  domains.push({name: name || null, domain});
+  document.getElementById('newName').value = '';
+  document.getElementById('newDomain').value = '';
+  render();
+  if (dirHandle) saveDomains();
+  else alert('Added for this view. Connect the config folder to save it so the scheduled check picks it up.');
+}
+
+function removeDomain(i){
+  domains.splice(i,1);
+  render();
+  if (dirHandle) saveDomains();
+}
+
+async function checkOneLive(domain){
+  const prior = latestHistory(domain);
+  const priorTarget = prior ? prior.target : null;
+  try{
+    const resp = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=CNAME`);
+    const data = await resp.json();
+    const answer = (data.Answer || []).find(a => a.type === 5);
+    const target = answer ? answer.data.replace(/\.$/, '') : null;
+    let status;
+    if (!target) status = 'unresolved';
+    else if (!prior) status = 'new';
+    else if (target !== priorTarget) status = 'changed';
+    else status = 'ok';
+    liveResults[domain] = {target, status, checkedAt: new Date().toISOString()};
+  }catch(err){
+    liveResults[domain] = {target: null, status: 'unresolved', checkedAt: new Date().toISOString()};
+  }
+}
+
+async function checkAllLive(){
+  const btn = document.getElementById('checkAllBtn');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  await Promise.all(domains.map(d => checkOneLive(d.domain)));
+  render();
+  btn.disabled = false; btn.textContent = 'Check all now (live)';
+}
+
+document.getElementById('lastRunLabel').textContent = EMBEDDED.lastRun
+  ? `Last scheduled check: ${fmtTime(EMBEDDED.lastRun)}`
+  : 'No scheduled check has run yet.';
+
+applyIntervalToSelect();
+applyEmailAlertsToForm();
+render();
+</script>
+</body>
+</html>
