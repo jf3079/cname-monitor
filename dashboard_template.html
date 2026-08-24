@@ -56,6 +56,7 @@
   <div class="card">
     <div class="statusline">
       <div>
+        <span id="githubBadge" class="connbadge">Loading config from GitHub…</span>
         <span id="connBadge" class="connbadge">Config not connected</span>
         <span class="muted" id="lastRunLabel" style="margin-left:10px;"></span>
       </div>
@@ -64,7 +65,9 @@
         <button class="secondary" onclick="checkAllLive()" id="checkAllBtn">Check all now (live)</button>
       </div>
     </div>
-    <div class="note">"Connect config folder" lets this page read and save <span class="mono">domains.json</span> / <span class="mono">history.json</span> directly (select the <span class="mono">cname-monitor</span> folder). Works in Chrome/Edge. Without it, this page just shows a snapshot from the last scheduled run — added domains won't be saved to disk.</div>
+    <div class="note">On load, this page tries to pull <span class="mono">domains.json</span> / <span class="mono">settings.json</span> straight from
+      <a href="https://github.com/jf3079/cname-monitor" target="_blank" rel="noopener" style="color:var(--accent2);">github.com/jf3079/cname-monitor</a>
+      (read-only, no login needed since it's public) — so this view stays current with whatever's committed there, even on a hosted copy of this page. "Connect config folder" additionally lets you edit the domain list and settings locally; those local edits aren't pushed to GitHub automatically — commit/push them yourself via git whenever you're ready.</div>
   </div>
 
   <div class="card">
@@ -142,6 +145,12 @@
 
 <script>
 /*__EMBEDDED_DATA__*/
+
+// Config (domains.json / settings.json) is read automatically from this
+// public GitHub repo on load -- see fetchGithubConfig(). history.json
+// isn't stored in git; it always comes from the embedded snapshot or a
+// locally-connected folder.
+const GITHUB_CONFIG_BASE = 'https://raw.githubusercontent.com/jf3079/cname-monitor/main';
 
 let domains = EMBEDDED.domains || [];
 let history = EMBEDDED.history || {};
@@ -378,6 +387,42 @@ function removeDomain(i){
   if (dirHandle) saveDomains();
 }
 
+async function fetchGithubConfig(){
+  const badge = document.getElementById('githubBadge');
+  let gotDomains = false;
+  let gotSettings = false;
+  try{
+    const [domainsResp, settingsResp] = await Promise.all([
+      fetch(`${GITHUB_CONFIG_BASE}/domains.json`, {cache: 'no-store'}).catch(() => null),
+      fetch(`${GITHUB_CONFIG_BASE}/settings.json`, {cache: 'no-store'}).catch(() => null),
+    ]);
+
+    if (domainsResp && domainsResp.ok){
+      const text = (await domainsResp.text()).trim();
+      if (text){
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)){ domains = parsed; gotDomains = true; }
+      }
+    }
+    if (settingsResp && settingsResp.ok){
+      const text = (await settingsResp.text()).trim();
+      if (text){
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object'){ settings = parsed; gotSettings = true; }
+      }
+    }
+  }catch(err){
+    // fall through to the "using local snapshot" message below
+  }
+
+  if (gotDomains || gotSettings){
+    badge.textContent = 'Config loaded from GitHub';
+    badge.classList.add('on');
+  } else {
+    badge.textContent = 'Using local snapshot (GitHub fetch unavailable)';
+  }
+}
+
 async function checkOneLive(domain){
   const prior = latestHistory(domain);
   const priorTarget = prior ? prior.target : null;
@@ -409,9 +454,12 @@ document.getElementById('lastRunLabel').textContent = EMBEDDED.lastRun
   ? `Last scheduled check: ${fmtTime(EMBEDDED.lastRun)}`
   : 'No scheduled check has run yet.';
 
-applyIntervalToSelect();
-applyEmailAlertsToForm();
-render();
+(async function init(){
+  await fetchGithubConfig();
+  applyIntervalToSelect();
+  applyEmailAlertsToForm();
+  render();
+})();
 </script>
 </body>
 </html>

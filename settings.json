@@ -1,7 +1,7 @@
 {
-  "cron": "*/5 * * * *",
+  "cron": "0 * * * *",
   "emailAlerts": {
-    "enabled": true,
-    "to": "jerome3079@gmail.com"
+    "enabled": false,
+    "to": null
   }
 }
