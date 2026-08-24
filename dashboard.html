@@ -26,36 +26,47 @@
   button.secondary{background:transparent; border:1px solid var(--border); color:var(--text);}
   button.danger{background:transparent; border:1px solid var(--border); color:var(--danger);}
   button:disabled{opacity:.5; cursor:not-allowed;}
+  .wrap{max-width:1240px;}
   .table-wrap{margin-top:10px; border:1px solid var(--border); border-radius:10px; overflow-x:auto;}
-  table{width:100%; min-width:760px; border-collapse:collapse; font-size:13px;}
-  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:middle;}
+  table{width:100%; min-width:920px; border-collapse:collapse; font-size:13px; table-layout:fixed;}
+  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top;}
   thead th{background:var(--card2); color:var(--muted); font-weight:600; font-size:10.5px;
-    text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); white-space:nowrap;}
+    text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;}
   tbody tr{transition:background .12s ease;}
   tbody tr:nth-child(even){background:rgba(255,255,255,.018);}
   tbody tr:hover{background:rgba(56,189,248,.06);}
   tbody tr:last-child td{border-bottom:none;}
-  td.col-name{font-weight:600; white-space:nowrap;}
-  td.col-status{text-align:center;}
-  td.col-checked{color:var(--muted); font-size:12px; white-space:nowrap;}
-  td.col-actions{white-space:nowrap; text-align:right;}
+  td{overflow:hidden;}
+  td.col-name{font-weight:600; word-break:break-word; padding-top:13px;}
+  td.col-status{text-align:center; padding-top:13px;}
+  td.col-checked{color:var(--muted); font-size:12px; padding-top:13px;}
+  td.col-actions{text-align:right; padding-top:9px;}
+  td.col-actions .removeBtn{margin-bottom:6px;}
   td.col-value{font-weight:600;}
+  .valcell{display:flex; align-items:flex-start; gap:6px;}
+  .valcell .valtext{word-break:break-all; overflow-wrap:anywhere; flex:1; min-width:0;}
+  .copybtn{flex:none; border:1px solid var(--border); background:var(--card2); color:var(--muted);
+    font-size:10px; padding:2px 7px; border-radius:6px; cursor:pointer; line-height:1.6; white-space:nowrap;}
+  .copybtn:hover{color:var(--text); border-color:var(--accent2);}
   .badge{display:inline-block; font-size:11px; font-weight:600; padding:3px 10px; border-radius:999px; letter-spacing:.02em;}
   .badge.ok{background:rgba(74,222,128,.15); color:var(--accent);}
   .badge.changed{background:rgba(248,113,113,.15); color:var(--danger);}
   .badge.unresolved{background:rgba(251,191,36,.15); color:var(--warn);}
   .badge.new{background:rgba(56,189,248,.15); color:var(--accent2);}
   .badge.unchecked{background:rgba(139,152,165,.15); color:var(--muted);}
-  .mono{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; line-height:1.5; word-break:break-all; overflow-wrap:anywhere;}
   .muted{color:var(--muted); font-size:12px;}
   .statusline{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;}
   .connbadge{font-size:11px; padding:4px 10px; border-radius:999px; background:var(--card2); color:var(--muted);}
   .connbadge.on{color:var(--accent); background:rgba(74,222,128,.12);}
   .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
-  .hist{max-width:240px;}
-  .hist-item{font-size:11px; color:var(--muted); padding:2px 0 2px 10px; border-left:2px solid var(--border); margin-bottom:3px;}
+  .hist{}
+  .hist-item{font-size:11px; color:var(--muted); padding:2px 0 2px 8px; border-left:2px solid var(--border); margin-bottom:4px;
+    word-break:break-all; overflow-wrap:anywhere; line-height:1.4;}
   .hist-item:last-child{margin-bottom:0;}
-  .hist-item .ts{color:var(--text); opacity:.7; margin-right:4px;}
+  .hist-item .ts{display:block; color:var(--text); opacity:.65; font-size:10.5px; margin-bottom:1px;}
+  .hist-more{font-size:11px; color:var(--accent2); cursor:pointer; margin-top:2px; background:none; border:none; padding:0;}
   .note{font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px;}
   .removeBtn{font-size:11px; padding:5px 9px;}
   .empty{color:var(--muted); font-size:13px; padding:16px; text-align:center;}
@@ -147,6 +158,15 @@
     <div style="font-weight:600; margin-bottom:6px;">Monitored domains</div>
     <div class="table-wrap">
       <table>
+        <colgroup>
+          <col style="width:12%">
+          <col style="width:23%">
+          <col style="width:23%">
+          <col style="width:8%">
+          <col style="width:11%">
+          <col style="width:15%">
+          <col style="width:8%">
+        </colgroup>
         <thead>
           <tr><th>Domain</th><th>CNAME name</th><th>CNAME value</th><th>Status</th><th>Last checked</th><th>History</th><th></th></tr>
         </thead>
@@ -201,9 +221,63 @@ function statusBadge(status){
 }
 
 let editingIndex = null;
+let expandedHistory = new Set();
 
 function escapeAttr(s){
   return (s || '').replace(/"/g, '&quot;');
+}
+
+function escapeHtml(s){
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// For embedding a value inside a single-quoted inline-JS string argument
+// (onclick="...('...')") -- escapes backslashes and single quotes so an
+// unusual CNAME value can't break out of the string literal.
+function escapeJsString(s){
+  return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Renders a mono value with a small copy-to-clipboard button next to it --
+// these are exactly the strings people need to paste into a DNS provider,
+// so a one-click copy is worth the extra bit of chrome.
+function valueCell(text){
+  if (!text) return '<span class="muted">–</span>';
+  return `<div class="valcell"><span class="valtext">${escapeHtml(text)}</span>` +
+    `<button class="copybtn" type="button" onclick="copyValue(this, '${escapeJsString(text)}')">Copy</button></div>`;
+}
+
+async function copyValue(btn, text){
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(err){
+    // clipboard API can be unavailable (older browser, non-secure context) --
+    // fail quietly rather than interrupting with an alert.
+  }
+  const original = btn.textContent;
+  btn.textContent = 'Copied';
+  setTimeout(() => { btn.textContent = original; }, 1200);
+}
+
+function toggleHistory(domain){
+  if (expandedHistory.has(domain)) expandedHistory.delete(domain);
+  else expandedHistory.add(domain);
+  render();
+}
+
+function historyCell(domain){
+  const h = history[domain] || [];
+  if (!h.length) return '<span class="muted">no history yet</span>';
+  const expanded = expandedHistory.has(domain);
+  const shown = expanded ? h.slice().reverse() : h.slice(-2).reverse();
+  const items = shown.map(e =>
+    `<div class="hist-item"><span class="ts">${fmtTime(e.timestamp)}</span>${escapeHtml(e.target) || '(none)'}</div>`
+  ).join('');
+  const remaining = h.length - shown.length;
+  const toggle = h.length > 2
+    ? `<button class="hist-more" type="button" onclick="toggleHistory('${escapeJsString(domain)}')">${expanded ? 'Show less' : `+${remaining} more`}</button>`
+    : '';
+  return items + toggle;
 }
 
 function render(){
@@ -218,21 +292,16 @@ function render(){
     const status = live ? live.status : (last ? last.status : 'unchecked');
     const checkedAt = live ? live.checkedAt : (last ? last.timestamp : null);
 
-    const h = history[d.domain] || [];
-    const histItems = h.slice(-4).reverse().map(e =>
-      `<div class="hist-item"><span class="ts">${fmtTime(e.timestamp)}</span>${e.target || '(none)'}</div>`
-    ).join('');
-
     const tr = document.createElement('tr');
 
     if (i === editingIndex){
       tr.innerHTML = `
         <td><input type="text" id="editName" value="${escapeAttr(d.name)}" placeholder="Domain (friendly label)"></td>
         <td><input type="text" id="editDomain" value="${escapeAttr(d.domain)}" placeholder="CNAME name"></td>
-        <td class="mono col-value">${target || '<span class="muted">–</span>'}</td>
+        <td class="col-value mono">${valueCell(target)}</td>
         <td class="col-status">${statusBadge(status)}</td>
         <td class="col-checked">${fmtTime(checkedAt)}</td>
-        <td class="hist">${histItems || '<span class="muted">no history yet</span>'}</td>
+        <td class="hist">${historyCell(d.domain)}</td>
         <td class="col-actions">
           <button onclick="saveEdit(${i})">Save</button>
           <button class="secondary removeBtn" onclick="cancelEdit()">Cancel</button>
@@ -241,11 +310,11 @@ function render(){
     } else {
       tr.innerHTML = `
         <td class="col-name">${d.name || '<span class="muted">–</span>'}</td>
-        <td class="mono">${d.domain}</td>
-        <td class="mono col-value">${target || '<span class="muted">–</span>'}</td>
+        <td class="col-value mono">${valueCell(d.domain)}</td>
+        <td class="col-value mono">${valueCell(target)}</td>
         <td class="col-status">${statusBadge(status)}${live ? ' <span class="muted" style="font-size:10px;">(live)</span>' : ''}</td>
         <td class="col-checked">${fmtTime(checkedAt)}</td>
-        <td class="hist">${histItems || '<span class="muted">no history yet</span>'}</td>
+        <td class="hist">${historyCell(d.domain)}</td>
         <td class="col-actions">
           <button class="secondary removeBtn" onclick="editDomain(${i})">Edit</button>
           <button class="danger removeBtn" onclick="removeDomain(${i})">Remove</button>
