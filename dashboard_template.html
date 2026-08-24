@@ -26,11 +26,21 @@
   button.secondary{background:transparent; border:1px solid var(--border); color:var(--text);}
   button.danger{background:transparent; border:1px solid var(--border); color:var(--danger);}
   button:disabled{opacity:.5; cursor:not-allowed;}
-  table{width:100%; border-collapse:collapse; margin-top:8px; font-size:13px;}
-  th,td{padding:9px 10px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top;}
-  th{color:var(--muted); font-weight:500; font-size:12px;}
-  tr:last-child td{border-bottom:none;}
-  .badge{display:inline-block; font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px;}
+  .table-wrap{margin-top:10px; border:1px solid var(--border); border-radius:10px; overflow-x:auto;}
+  table{width:100%; min-width:760px; border-collapse:collapse; font-size:13px;}
+  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); vertical-align:middle;}
+  thead th{background:var(--card2); color:var(--muted); font-weight:600; font-size:10.5px;
+    text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); white-space:nowrap;}
+  tbody tr{transition:background .12s ease;}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.018);}
+  tbody tr:hover{background:rgba(56,189,248,.06);}
+  tbody tr:last-child td{border-bottom:none;}
+  td.col-name{font-weight:600; white-space:nowrap;}
+  td.col-status{text-align:center;}
+  td.col-checked{color:var(--muted); font-size:12px; white-space:nowrap;}
+  td.col-actions{white-space:nowrap; text-align:right;}
+  td.col-value{font-weight:600;}
+  .badge{display:inline-block; font-size:11px; font-weight:600; padding:3px 10px; border-radius:999px; letter-spacing:.02em;}
   .badge.ok{background:rgba(74,222,128,.15); color:var(--accent);}
   .badge.changed{background:rgba(248,113,113,.15); color:var(--danger);}
   .badge.unresolved{background:rgba(251,191,36,.15); color:var(--warn);}
@@ -42,10 +52,13 @@
   .connbadge{font-size:11px; padding:4px 10px; border-radius:999px; background:var(--card2); color:var(--muted);}
   .connbadge.on{color:var(--accent); background:rgba(74,222,128,.12);}
   .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
-  .hist{font-size:11.5px; color:var(--muted); margin-top:4px; max-width:260px;}
+  .hist{max-width:240px;}
+  .hist-item{font-size:11px; color:var(--muted); padding:2px 0 2px 10px; border-left:2px solid var(--border); margin-bottom:3px;}
+  .hist-item:last-child{margin-bottom:0;}
+  .hist-item .ts{color:var(--text); opacity:.7; margin-right:4px;}
   .note{font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px;}
   .removeBtn{font-size:11px; padding:5px 9px;}
-  .empty{color:var(--muted); font-size:13px; padding:14px 0;}
+  .empty{color:var(--muted); font-size:13px; padding:16px; text-align:center;}
 </style>
 </head>
 <body>
@@ -132,12 +145,14 @@
 
   <div class="card">
     <div style="font-weight:600; margin-bottom:6px;">Monitored domains</div>
-    <table>
-      <thead>
-        <tr><th>Domain</th><th>CNAME name</th><th>CNAME value</th><th>Status</th><th>Last checked</th><th>History</th><th></th></tr>
-      </thead>
-      <tbody id="domainBody"></tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>CNAME name</th><th>CNAME value</th><th>Status</th><th>Last checked</th><th>History</th><th></th></tr>
+        </thead>
+        <tbody id="domainBody"></tbody>
+      </table>
+    </div>
     <div class="empty" id="emptyMsg" style="display:none;">No domains yet — add one above.</div>
   </div>
 </div>
@@ -193,7 +208,9 @@ function render(){
     const checkedAt = live ? live.checkedAt : (last ? last.timestamp : null);
 
     const h = history[d.domain] || [];
-    const histStr = h.slice(-4).reverse().map(e => `${fmtTime(e.timestamp)}: ${e.target || '(none)'}`).join('<br>');
+    const histItems = h.slice(-4).reverse().map(e =>
+      `<div class="hist-item"><span class="ts">${fmtTime(e.timestamp)}</span>${e.target || '(none)'}</div>`
+    ).join('');
 
     const tr = document.createElement('tr');
 
@@ -201,24 +218,24 @@ function render(){
       tr.innerHTML = `
         <td><input type="text" id="editName" value="${escapeAttr(d.name)}" placeholder="Domain (friendly label)"></td>
         <td><input type="text" id="editDomain" value="${escapeAttr(d.domain)}" placeholder="CNAME name"></td>
-        <td class="mono">${target || '<span class="muted">–</span>'}</td>
-        <td>${statusBadge(status)}</td>
-        <td class="muted">${fmtTime(checkedAt)}</td>
-        <td class="hist">${histStr || '<span class="muted">no history yet</span>'}</td>
-        <td>
+        <td class="mono col-value">${target || '<span class="muted">–</span>'}</td>
+        <td class="col-status">${statusBadge(status)}</td>
+        <td class="col-checked">${fmtTime(checkedAt)}</td>
+        <td class="hist">${histItems || '<span class="muted">no history yet</span>'}</td>
+        <td class="col-actions">
           <button onclick="saveEdit(${i})">Save</button>
           <button class="secondary removeBtn" onclick="cancelEdit()">Cancel</button>
         </td>
       `;
     } else {
       tr.innerHTML = `
-        <td>${d.name || '<span class="muted">–</span>'}</td>
+        <td class="col-name">${d.name || '<span class="muted">–</span>'}</td>
         <td class="mono">${d.domain}</td>
-        <td class="mono">${target || '<span class="muted">–</span>'}</td>
-        <td>${statusBadge(status)}${live ? ' <span class="muted" style="font-size:10px;">(live)</span>' : ''}</td>
-        <td class="muted">${fmtTime(checkedAt)}</td>
-        <td class="hist">${histStr || '<span class="muted">no history yet</span>'}</td>
-        <td>
+        <td class="mono col-value">${target || '<span class="muted">–</span>'}</td>
+        <td class="col-status">${statusBadge(status)}${live ? ' <span class="muted" style="font-size:10px;">(live)</span>' : ''}</td>
+        <td class="col-checked">${fmtTime(checkedAt)}</td>
+        <td class="hist">${histItems || '<span class="muted">no history yet</span>'}</td>
+        <td class="col-actions">
           <button class="secondary removeBtn" onclick="editDomain(${i})">Edit</button>
           <button class="danger removeBtn" onclick="removeDomain(${i})">Remove</button>
         </td>
