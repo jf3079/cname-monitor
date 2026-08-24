@@ -81,6 +81,7 @@
     <div class="statusline">
       <div>
         <span id="githubBadge" class="connbadge">Loading config from GitHub…</span>
+        <span id="githubWriteBadge" class="connbadge">GitHub write: not set</span>
         <span class="muted" id="lastRunLabel" style="margin-left:10px;"></span>
       </div>
       <div class="actions" style="margin:0;">
@@ -88,9 +89,19 @@
         <button class="secondary" onclick="checkAllLive()" id="checkAllBtn">Check all now (live)</button>
       </div>
     </div>
+    <div class="row" style="margin-top:10px;">
+      <div class="field" style="max-width:340px;">
+        <label>GitHub token (write access to this repo)</label>
+        <input type="password" id="githubTokenInput" placeholder="paste a token with write access to this repo">
+      </div>
+      <div>
+        <button onclick="setGithubToken()">Use token</button>
+        <button class="secondary" onclick="clearGithubToken()">Clear</button>
+      </div>
+    </div>
     <div class="note">On load, this page pulls <span class="mono">domains.json</span> / <span class="mono">settings.json</span> straight from
       <a href="https://github.com/jf3079/cname-monitor" target="_blank" rel="noopener" style="color:var(--accent2);">github.com/jf3079/cname-monitor</a>
-      (read-only, no login needed since it's public) — so this view stays current with whatever's committed there, even on a hosted copy of this page. To actually change the domain list or settings, click "Edit config on GitHub" and edit <span class="mono">domains.json</span> / <span class="mono">settings.json</span> there (GitHub's own editor, or clone and push) — this page and the next scheduled check will pick up the change automatically once it's on the <span class="mono">main</span> branch. The controls below can add/edit/remove rows for a quick local preview, but nothing here saves back to GitHub for you.</div>
+      (read-only, no login needed since it's public). To make the controls below actually save, paste a GitHub token above (a classic token with the <span class="mono">repo</span> scope, or a fine-grained token with Contents: Read and write on this one repo) — adding, editing, or removing a domain, or changing the interval / email alerts, will then commit straight to <span class="mono">domains.json</span> / <span class="mono">settings.json</span> / <span class="mono">history.json</span> on the <span class="mono">main</span> branch. The token stays only in this browser tab's memory — it's never written to disk, never sent anywhere but directly to api.github.com, and disappears the moment you reload the page or click "Clear". Without a token, those controls just preview the change here; use "Edit config on GitHub" to change things there instead.</div>
   </div>
 
   <div class="card">
@@ -356,11 +367,107 @@ function saveEdit(i){
 
   editingIndex = null;
   render();
-  notePreviewOnly('This edit is a local preview only. To make it stick, change domains.json on GitHub and push.');
+  if (githubToken){
+    const renamed = oldDomain !== domain;
+    persistToGithub('domains.json', domains, `Update domain entry via dashboard${renamed ? ' (renamed)' : ''}`);
+    if (renamed) persistToGithub('history.json', history, 'Carry history to renamed domain via dashboard');
+  } else {
+    notePreviewOnly('This edit is a local preview only (no GitHub token set). Enter a token above to save it, or change domains.json on GitHub yourself.');
+  }
 }
 
 function notePreviewOnly(msg){
   alert(msg + '\n\nEdit config on GitHub: https://github.com/jf3079/cname-monitor');
+}
+
+// --- Direct-to-GitHub saving -------------------------------------------
+// The token is typed into this page by you and kept only in this tab's
+// memory (a plain JS variable, never written to disk, never sent
+// anywhere except straight to api.github.com from your own browser).
+// Reloading the page clears it. Claude never sees or handles it.
+let githubToken = null;
+
+function setGithubToken(){
+  const input = document.getElementById('githubTokenInput');
+  const token = input.value.trim();
+  const badge = document.getElementById('githubWriteBadge');
+  if (!token){
+    githubToken = null;
+    badge.textContent = 'GitHub write: not set';
+    badge.classList.remove('on');
+    return;
+  }
+  githubToken = token;
+  input.value = '';
+  input.placeholder = '•••••••••••••• (set for this tab)';
+  badge.textContent = 'GitHub write: token set (this tab only)';
+  badge.classList.add('on');
+}
+
+function clearGithubToken(){
+  githubToken = null;
+  const input = document.getElementById('githubTokenInput');
+  input.value = '';
+  input.placeholder = 'paste a token with write access to this repo';
+  const badge = document.getElementById('githubWriteBadge');
+  badge.textContent = 'GitHub write: not set';
+  badge.classList.remove('on');
+}
+
+function b64EncodeUnicode(str){
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+    (match, p1) => String.fromCharCode('0x' + p1)));
+}
+
+async function githubApi(path, options){
+  return fetch(`https://api.github.com/repos/jf3079/cname-monitor/${path}`, {
+    ...options,
+    headers: {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': `Bearer ${githubToken}`,
+      ...(options && options.headers ? options.headers : {}),
+    },
+  });
+}
+
+async function getFileSha(filename){
+  const resp = await githubApi(`contents/${filename}?ref=main`, {});
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`could not read current ${filename} (${resp.status})`);
+  const data = await resp.json();
+  return data.sha;
+}
+
+// Writes `obj` as pretty-printed JSON to `filename` on the main branch,
+// fetching the file's current sha first (required by GitHub's API for
+// updating an existing file; omitted automatically if the file is new).
+async function persistToGithub(filename, obj, message){
+  if (!githubToken){
+    notePreviewOnly(`Not saved (no GitHub token set). Enter a token above, or edit ${filename} on GitHub yourself.`);
+    return false;
+  }
+  try{
+    const sha = await getFileSha(filename);
+    const body = {
+      message,
+      content: b64EncodeUnicode(JSON.stringify(obj, null, 2) + '\n'),
+      branch: 'main',
+    };
+    if (sha) body.sha = sha;
+    const resp = await githubApi(`contents/${filename}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok){
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.message || `GitHub returned ${resp.status}`);
+    }
+    return true;
+  }catch(err){
+    alert(`Could not save ${filename} to GitHub: ${err.message}`);
+    return false;
+  }
 }
 
 function applyIntervalToSelect(){
@@ -376,10 +483,18 @@ function applyIntervalToSelect(){
   }
 }
 
-function saveInterval(){
+async function saveInterval(){
   const cron = document.getElementById('intervalSelect').value;
   settings.cron = cron;
-  notePreviewOnly('This is a local preview only. To actually change the check frequency, set "cron" in settings.json on GitHub and push.');
+  if (githubToken){
+    const ok = await persistToGithub('settings.json', settings, 'Update check interval via dashboard');
+    if (ok){
+      document.getElementById('intervalNote').textContent =
+        'Saved to settings.json on GitHub. The scheduled check will pick up this new frequency on its next run.';
+    }
+  } else {
+    notePreviewOnly('This is a local preview only (no GitHub token set). Enter a token above to save it, or set "cron" in settings.json on GitHub yourself.');
+  }
 }
 
 function applyEmailAlertsToForm(){
@@ -388,7 +503,7 @@ function applyEmailAlertsToForm(){
   document.getElementById('emailAddress').value = ea.to || '';
 }
 
-function saveEmailAlerts(){
+async function saveEmailAlerts(){
   const enabled = document.getElementById('emailEnabled').checked;
   const to = document.getElementById('emailAddress').value.trim();
   if (enabled && !to){
@@ -396,10 +511,18 @@ function saveEmailAlerts(){
     return;
   }
   settings.emailAlerts = {enabled, to: to || null};
-  notePreviewOnly('This is a local preview only. To actually change email alerts, edit "emailAlerts" in settings.json on GitHub and push.');
+  if (githubToken){
+    const ok = await persistToGithub('settings.json', settings, 'Update email alert settings via dashboard');
+    if (ok){
+      document.getElementById('emailNote').textContent =
+        'Saved to settings.json on GitHub. The scheduled check will use this starting with its next run.';
+    }
+  } else {
+    notePreviewOnly('This is a local preview only (no GitHub token set). Enter a token above to save it, or edit "emailAlerts" in settings.json on GitHub yourself.');
+  }
 }
 
-function addDomain(){
+async function addDomain(){
   const name = document.getElementById('newName').value.trim();
   const domain = document.getElementById('newDomain').value.trim().toLowerCase();
   if (!domain){ alert('Enter a domain.'); return; }
@@ -408,13 +531,22 @@ function addDomain(){
   document.getElementById('newName').value = '';
   document.getElementById('newDomain').value = '';
   render();
-  notePreviewOnly('Added for this preview only. To actually track this domain, add it to domains.json on GitHub and push.');
+  if (githubToken){
+    await persistToGithub('domains.json', domains, `Add ${domain} via dashboard`);
+  } else {
+    notePreviewOnly('Added for this preview only (no GitHub token set). Enter a token above to save it, or add it to domains.json on GitHub yourself.');
+  }
 }
 
-function removeDomain(i){
+async function removeDomain(i){
+  const removed = domains[i];
   domains.splice(i,1);
   render();
-  notePreviewOnly('Removed from this preview only. To actually stop tracking this domain, remove it from domains.json on GitHub and push.');
+  if (githubToken){
+    await persistToGithub('domains.json', domains, `Remove ${removed.domain} via dashboard`);
+  } else {
+    notePreviewOnly('Removed from this preview only (no GitHub token set). Enter a token above to save it, or remove it from domains.json on GitHub yourself.');
+  }
 }
 
 async function fetchGithubConfig(){
